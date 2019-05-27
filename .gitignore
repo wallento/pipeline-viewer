@@ -1,0 +1,7 @@
+.eggs
+.idea
+.venv
+*.egg-info
+__pycache__
+pipelineviewer/version.py
+*~
