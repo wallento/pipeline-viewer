@@ -159,10 +159,12 @@ def render(pipeline, args):
         colorama.init()
 
     in_snip = False
+    count_retired = 0
     for i in pipeline.log.values():
         if i.mode not in args.modes:
             if not in_snip:
                 args.outfile.write("~" * args.width + " snip (mode)\n")
+                count_retired = 0
             in_snip = True
             continue
         in_snip = False
@@ -182,6 +184,15 @@ def render(pipeline, args):
 
         if not args.no_mode:
             line += " {}".format(i.mode)
+
+        if not args.no_count_retired:
+            if "RE" in pipeline.stages:
+                if i.RE is not None:
+                    count_retired += 1
+            elif "C" in pipeline.stages:
+                if i.C is not None:
+                    count_retired += 1
+            line += " {}".format(count_retired)
 
         if not args.no_time:
             if pipeline.stages[-1] in i and i[pipeline.stages[-1]]:
@@ -224,6 +235,7 @@ def main():
     parser.add_argument("--no-time", action="store_true", help="suppress time frame in output")
     parser.add_argument("--no-pc", action="store_true", help="suppress program counter in output")
     parser.add_argument("--no-insn", action="store_true", help="suppress instruction in output")
+    parser.add_argument("--no-count-retired", action="store_true", help="Show counter of retired instructions")
     parser.add_argument("--bp", action="store_true", help="include branch predictor in output")
     args = parser.parse_args()
     args.modes = list(args.modes)
