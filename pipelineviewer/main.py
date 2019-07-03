@@ -6,10 +6,17 @@ from attrdict import AttrDict
 import colorama
 import argparse
 
+from signal import signal, SIGPIPE, SIG_DFL
+signal(SIGPIPE, SIG_DFL)
+
 display = {"IF": AttrDict(char="f", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE),
            "DE": AttrDict(char="d", fore=colorama.Fore.WHITE, back=colorama.Back.YELLOW),
+           "RN": AttrDict(char="n", fore=colorama.Fore.WHITE, back=colorama.Back.MAGENTA),
            "IS": AttrDict(char="i", fore=colorama.Fore.WHITE, back=colorama.Back.RED),
-           "C": AttrDict(char="c", fore=colorama.Fore.WHITE, back=colorama.Back.CYAN)}
+           "EX": AttrDict(char="e", fore=colorama.Fore.WHITE, back=colorama.Back.LIGHTMAGENTA_EX),
+           "C": AttrDict(char="c", fore=colorama.Fore.WHITE, back=colorama.Back.CYAN),
+           "RE": AttrDict(char="r", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE),
+           }
 
 
 class Pipeline(object):
@@ -18,7 +25,7 @@ class Pipeline(object):
 
 
 class PipelineAriane(Pipeline):
-    stages = ["IF", "DE", "IS", "C"]
+    stages = ["IF", "DE", "IS", "EX", "C"]
 
     # IF log is "<cycle> IF <id> <mode> <addr>"
     trace_if = re.compile(r"^\s*(\d+) IF \s*(\d+) (\w) ([0-9A-Fa-f]+)")
@@ -26,6 +33,8 @@ class PipelineAriane(Pipeline):
     trace_de = re.compile(r"^\s*(\d+) DE \s*(\d+) ([0-9A-Fa-f]+) (.*)")
     # IS log is "<cycle> IS <id>"
     trace_is = re.compile(r"^\s*(\d+) IS \s*(\d+)")
+    # EX log is "<cycle> EX <id>"
+    trace_ex = re.compile(r"^\s*(\d+) EX \s*(\d+)")
     # C log is "<cycle> C <id>"
     trace_c = re.compile(r"^\s*(\d+) C \s*(\d+)")
 
@@ -44,7 +53,7 @@ class PipelineAriane(Pipeline):
             if m:
                 id = int(m.group(2))
                 log[id] = AttrDict({"pc": int(m.group(4),16), "insn": None, "mode": m.group(3), "IF": int(m.group(1)),
-                                    "DE": None, "IS": None, "C": None, "BHT": None, "BP": None})
+                                    "DE": None, "IS": None, "EX": None, "C": None, "BHT": None, "BP": None})
                 continue
             m = self.trace_de.match(line)
             if m:
@@ -59,6 +68,11 @@ class PipelineAriane(Pipeline):
             if m:
                 id = int(m.group(2))
                 log[id].IS = int(m.group(1))
+                continue
+            m = self.trace_ex.match(line)
+            if m:
+                id = int(m.group(2))
+                log[id].EX = int(m.group(1))
                 continue
             m = self.trace_c.match(line)
             if m:
