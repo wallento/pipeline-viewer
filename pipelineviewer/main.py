@@ -24,7 +24,7 @@ class Pipeline(object):
         pass
 
 
-class PipelineAriane(Pipeline):
+class PipelineArianeText(Pipeline):
     stages = ["IF", "DE", "IS", "EX", "C"]
 
     # IF log is "<cycle> IF <id> <mode> <addr>"
@@ -98,6 +98,17 @@ class PipelineAriane(Pipeline):
 
         self.log = log
 
+import os
+
+class PipelineArianeCTF(Pipeline):
+    stages = ["IF", "DE", "IS", "EX", "C"]
+
+    def __init__(self, file):
+        log = {}
+
+        # TODO
+
+        self.log = log
 
 class PipelineBOOM(Pipeline):
     stages = ["IF", "DE", "RN", "IS", "C", "RE"]
@@ -149,7 +160,7 @@ class PipelineBOOM(Pipeline):
         self.log = log
 
 
-pipelines = {"ariane": PipelineAriane, "boom": PipelineBOOM}
+pipelines = {"ariane": PipelineArianeCTF, "ariane-text": PipelineArianeText, "boom": PipelineBOOM}
 
 
 def render(pipeline, args):
