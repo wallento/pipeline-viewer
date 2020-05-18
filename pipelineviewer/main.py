@@ -232,11 +232,19 @@ def render(pipeline, args):
         args.outfile.write(line+"\n")
     colorama.deinit()
 
+def FileOrFolderType(f):
+    if f == "-" or os.path.isfile(f):
+        return argparse.FileType('r')(f)
+    elif os.path.isdir(f):
+        return f
+    else:
+        raise Exception("Cannot find: {}".format(f))
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("format", choices=pipelines.keys())
-    parser.add_argument("infile", nargs='?', help="file with pipeline trace", type=argparse.FileType('r'),
-                        default=sys.stdin)
+    parser.add_argument("infile", nargs='?', help="file with pipeline trace", type=FileOrFolderType,
+                        default="-")
     parser.add_argument("outfile", nargs='?', help="file to render to", type=argparse.FileType('w'),
                         default=sys.stdout)
     parser.add_argument("-c", "--colored", action="store_true", help="force colored output")
