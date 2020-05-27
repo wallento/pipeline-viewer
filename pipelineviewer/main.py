@@ -5,6 +5,9 @@ import re
 from attrdict import AttrDict
 import colorama
 import argparse
+from babeltrace import TraceCollection
+
+import itertools
 
 from signal import signal, SIGPIPE, SIG_DFL
 signal(SIGPIPE, SIG_DFL)
@@ -14,6 +17,7 @@ display = {"IF": AttrDict(char="f", fore=colorama.Fore.WHITE, back=colorama.Back
            "RN": AttrDict(char="n", fore=colorama.Fore.WHITE, back=colorama.Back.MAGENTA),
            "IS": AttrDict(char="i", fore=colorama.Fore.WHITE, back=colorama.Back.RED),
            "EX": AttrDict(char="e", fore=colorama.Fore.WHITE, back=colorama.Back.LIGHTMAGENTA_EX),
+           "IDEX": AttrDict(char="e", fore=colorama.Fore.WHITE, back=colorama.Back.LIGHTMAGENTA_EX),
            "C": AttrDict(char="c", fore=colorama.Fore.WHITE, back=colorama.Back.CYAN),
            "RE": AttrDict(char="r", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE),
            }
@@ -159,8 +163,91 @@ class PipelineBOOM(Pipeline):
 
         self.log = log
 
+"""
+abstraction layer to read CTF format, underlaying library could be replaced easily
+"""
+class CTFReader():
+    def __init__(self, path):
+        self.babelreader = CTFBabeltrace(path)
+        
+    def get_events(self):
+        for event in self.babelreader.get_events():
+            yield event
+"""
+Utilizing babeltrace for reading CTF format
+"""
+class CTFBabeltrace():
+    def __init__(self, path):
+        self.traces = dict()
+        self.tc = TraceCollection()
+        if self.tc:
+            # add traces to the collection
+            if self.tc.add_traces_recursive(path, "ctf") is None:
+                raise RuntimeError('Cannot add trace')
+        else:
+            print("no TraceCollection available...")
+    def get_events(self):
+        if self.tc:
+            for event in self.tc.events:
+                yield event
+"""
+IBEX Core
+"""
+class PipelineIbex(Pipeline):
+    stages = ["IF", "IDEX"]
+    event_name = {"IF": 0, "IDEX": 1, "IDEX_MULTCYCLE_START": 2, "IDEX_MULTCYCLE_END": 3}
+    
+    def __init__(self, tracepath):
+        log = {}
+       
+        self.ctf_reader = CTFReader(tracepath)
+        #for event in self.ctf_reader.get_events():
+        for event in itertools.islice(self.ctf_reader.get_events() , 0, 40):
+            id = 0
+            pc = 0
+            insn = ""
+            insn_type = ""
 
-pipelines = {"ariane": PipelineArianeCTF, "ariane-text": PipelineArianeText, "boom": PipelineBOOM}
+            #print(str(event["id"]))
+            #print(event.keys())
+            id = event["id"]
+            id_str = list(self.event_name)[id] # maps to "IF", "IDEX", "IDEX_MULTCYCLE_START" or, "IDEX_MULTCYCLE_END"
+            timestamp = event['timestamp']
+            pc   = (event["pc"])    # TODO: hex?
+
+            #s = timestamp / 1000000000
+            #print('{:10} s'.format(s))
+
+            if id_str is "IF":
+                # ['insn', 'timestamp', 'pc', 'insn_type', 'id']
+                keys = event.keys()
+                #print(event.keys())
+
+                if "insn" in keys:
+                     insn = str(event["insn"]) # TODO: hex?        
+                if "insn_type" in keys:
+                     insn_type = str(event["insn_type"])
+                log[id] = AttrDict({"pc": pc, "insn_type": insn_type, "insn": insn, "mode": "M", "IF": timestamp, "IDEX": None, "IDEX_MULTCYCLE_START": None, "IDEX_MULTCYCLE_END": None})
+
+            elif id_str is "IDEX":
+                # ['id', 'timestamp', 'pc']
+                #print(event.keys())
+                #log[id] = AttrDict({"pc": pc, "insn_type": insn_type, "insn": insn, "mode": "M", "IF": None, "IDEX": timestamp, "IDEX_MULTCYCLE_START": None, "IDEX_MULTCYCLE_END": None})
+                pass
+            elif id_str is "IDEX_MULTCYCLE_START":
+                # ['id', 'timestamp', 'pc']
+                #print(event.keys())
+                #log[id] = AttrDict({"pc": pc, "insn_type": None, "insn": None, "mode": "M", "IF": None, "IDEX": None, "IDEX_MULTCYCLE_START": timestamp, "IDEX_MULTCYCLE_END": None})
+                pass
+            elif id_str is "IDEX_MULTCYCLE_END":
+                # ['id', 'timestamp', 'pc']
+                #log[id] = AttrDict({"pc": pc, "insn_type": None, "insn": None, "mode": "M", "IF": None, "IDEX": None, "IDEX_MULTCYCLE_START": None, "IDEX_MULTCYCLE_END": timestamp})
+                pass
+
+        self.log = log
+
+
+pipelines = {"ariane": PipelineArianeCTF, "ariane-text": PipelineArianeText, "ibex": PipelineIbex, "boom": PipelineBOOM}
 
 
 def render(pipeline, args):
