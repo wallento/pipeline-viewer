@@ -7,6 +7,9 @@ import colorama
 import argparse
 from babeltrace import TraceCollection
 
+from riscvmodel.code import decode
+import pygments, pygments.lexers, pygments.formatters
+
 import itertools
 
 from signal import signal, SIGPIPE, SIG_DFL
@@ -169,7 +172,7 @@ abstraction layer to read CTF format, underlaying library could be replaced easi
 class CTFReader():
     def __init__(self, path):
         self.babelreader = CTFBabeltrace(path)
-        
+
     def get_events(self):
         for event in self.babelreader.get_events():
             yield event
@@ -196,13 +199,13 @@ IBEX Core
 class PipelineIbex(Pipeline):
     stages = ["IF", "IDEX"]
     event_name = {"IF": 0, "IDEX": 1, "IDEX_MULTCYCLE_START": 2, "IDEX_MULTCYCLE_END": 3}
-    
+
     def __init__(self, tracepath):
         log = {}
-       
+
         self.ctf_reader = CTFReader(tracepath)
         #for event in self.ctf_reader.get_events():
-        for event in itertools.islice(self.ctf_reader.get_events() , 0, 40):
+        for event in self.ctf_reader.get_events():
             id = 0
             pc = 0
             insn = ""
@@ -218,34 +221,35 @@ class PipelineIbex(Pipeline):
             #s = timestamp / 1000000000
             #print('{:10} s'.format(s))
 
-            if id_str is "IF":
+            if id_str == "IF":
                 # ['insn', 'timestamp', 'pc', 'insn_type', 'id']
                 keys = event.keys()
-                #print(event.keys())
 
                 if "insn" in keys:
-                     insn = str(event["insn"]) # TODO: hex?        
+                     insn = str(event["insn"]) # TODO: hex?
                 if "insn_type" in keys:
                      insn_type = str(event["insn_type"])
-                log[id] = AttrDict({"pc": pc, "insn_type": insn_type, "insn": insn, "mode": "M", "IF": timestamp, "IDEX": None, "IDEX_MULTCYCLE_START": None, "IDEX_MULTCYCLE_END": None})
+                log[event["insn_id"]] = AttrDict({"pc": pc, "insn_type": insn_type, "insn": insn, "mode": "M", "IF": timestamp, "IDEX": None, "end": None})
 
-            elif id_str is "IDEX":
+            elif id_str == "IDEX":
                 # ['id', 'timestamp', 'pc']
                 #print(event.keys())
-                #log[id] = AttrDict({"pc": pc, "insn_type": insn_type, "insn": insn, "mode": "M", "IF": None, "IDEX": timestamp, "IDEX_MULTCYCLE_START": None, "IDEX_MULTCYCLE_END": None})
+                log[event["insn_id"]]["IDEX"] = event["timestamp"]
+                log[event["insn_id"]]["end"] = event["timestamp"]
                 pass
-            elif id_str is "IDEX_MULTCYCLE_START":
+            elif id_str == "IDEX_MULTCYCLE_START":
                 # ['id', 'timestamp', 'pc']
                 #print(event.keys())
+                log[event["insn_id"]]["IDEX"] = event["timestamp"]
                 #log[id] = AttrDict({"pc": pc, "insn_type": None, "insn": None, "mode": "M", "IF": None, "IDEX": None, "IDEX_MULTCYCLE_START": timestamp, "IDEX_MULTCYCLE_END": None})
                 pass
-            elif id_str is "IDEX_MULTCYCLE_END":
+            elif id_str == "IDEX_MULTCYCLE_END":
                 # ['id', 'timestamp', 'pc']
+                log[event["insn_id"]]["end"] = event["timestamp"]
                 #log[id] = AttrDict({"pc": pc, "insn_type": None, "insn": None, "mode": "M", "IF": None, "IDEX": None, "IDEX_MULTCYCLE_START": None, "IDEX_MULTCYCLE_END": timestamp})
                 pass
 
         self.log = log
-
 
 pipelines = {"ariane": PipelineArianeCTF, "ariane-text": PipelineArianeText, "ibex": PipelineIbex, "boom": PipelineBOOM}
 
@@ -267,24 +271,30 @@ def render(pipeline, args):
             continue
         in_snip = False
         line = list("." * args.width)
+
         for s in range(len(pipeline.stages)):
             stage = pipeline.stages[s]
             if stage in i and i[stage] is not None:
                 line[i[stage] % args.width] = display[stage].fore + display[stage].back + display[stage].char + colorama.Style.RESET_ALL
                 next = s + 1
-                if next >= len(pipeline.stages):
+                if next >= len(pipeline.stages) and "end" in i and i["end"] is not None:
+                    for x in range(i[stage] + 1, i["end"]+1):
+                        line[x % args.width] = display[stage].fore + display[stage].back + "=" + colorama.Style.RESET_ALL
                     continue
                 next = pipeline.stages[next]
                 if next in i and i[next] is not None:
                     for x in range(i[stage] + 1, i[next]):
                         line[x % args.width] = display[stage].fore + display[stage].back + "=" + colorama.Style.RESET_ALL
+
         line = "[" + "".join(line) + "]"
 
         if not args.no_mode:
             line += " {}".format(i.mode)
 
         if not args.no_count_retired:
-            if "RE" in pipeline.stages:
+            if "end" in i and i["end"]:
+                count_retired += 1
+            elif "RE" in pipeline.stages:
                 if i.RE is not None:
                     count_retired += 1
             elif "C" in pipeline.stages:
@@ -302,7 +312,7 @@ def render(pipeline, args):
             line += " {:016x}".format(i.pc)
 
         if not args.no_insn and i.insn:
-            line += " " + i.insn
+            line += " " + pygments.highlight(str(decode(int(i.insn))),pygments.lexers.GasLexer(),pygments.formatters.TerminalFormatter()).strip()
 
         if args.bp:
             if "BP" in i and i.BP:
