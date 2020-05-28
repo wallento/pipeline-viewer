@@ -15,12 +15,12 @@ import itertools
 from signal import signal, SIGPIPE, SIG_DFL
 signal(SIGPIPE, SIG_DFL)
 
-display = {"IF": AttrDict(char="f", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE),
+display = {"IF": AttrDict(char="f", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE, legend="fetch"),
            "DE": AttrDict(char="d", fore=colorama.Fore.WHITE, back=colorama.Back.YELLOW),
            "RN": AttrDict(char="n", fore=colorama.Fore.WHITE, back=colorama.Back.MAGENTA),
            "IS": AttrDict(char="i", fore=colorama.Fore.WHITE, back=colorama.Back.RED),
            "EX": AttrDict(char="e", fore=colorama.Fore.WHITE, back=colorama.Back.LIGHTMAGENTA_EX),
-           "IDEX": AttrDict(char="e", fore=colorama.Fore.WHITE, back=colorama.Back.LIGHTMAGENTA_EX),
+           "IDEX": AttrDict(char="e", fore=colorama.Fore.WHITE, back=colorama.Back.LIGHTMAGENTA_EX, legend="decode/execute"),
            "C": AttrDict(char="c", fore=colorama.Fore.WHITE, back=colorama.Back.CYAN),
            "RE": AttrDict(char="r", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE),
            }
@@ -260,6 +260,37 @@ def render(pipeline, args):
     else:
         colorama.init()
 
+    header_legend = []
+    length = 0 # need to keep track separately
+    for s in pipeline.stages:
+        leg  = display[s].fore + display[s].back + display[s].char + colorama.Style.RESET_ALL
+        leg += "=" + display[s].legend
+        length += 2+len(display[s].legend)
+        header_legend.append(leg)
+    header_legend = " ".join(header_legend)
+    header = " {}{} ".format(header_legend, " "*(args.width-length))
+
+    col_width = {'m': 1, 'r': 8, 't': 17, 'p': 16 }
+
+    if "m" in args.format:
+        pos = args.width + 1
+        for c in args.format:
+            pos += 1
+            if c in col_width:
+                pos += col_width[c]
+            if c == "m":
+                break;
+        print(" "*(pos-1)+"mode")
+
+    col_header = {'m': "|", 'r': "#retired", 't': "   cycle from-to ", 'p': ' pc             ', 'i': " insn"}
+
+    for c in args.format:
+        if c in col_header:
+            header += col_header[c]
+        header += " "
+
+    print(header)
+
     in_snip = False
     count_retired = 0
     for i in pipeline.log.values():
@@ -288,43 +319,39 @@ def render(pipeline, args):
 
         line = "[" + "".join(line) + "]"
 
-        if not args.no_mode:
-            line += " {}".format(i.mode)
-
-        if not args.no_count_retired:
-            if "end" in i and i["end"]:
-                count_retired += 1
-            elif "RE" in pipeline.stages:
-                if i.RE is not None:
+        for c in args.format:
+            if c == "m":
+                line += " {}".format(i.mode)
+            elif c == "r":
+                if "end" in i and i["end"]:
                     count_retired += 1
-            elif "C" in pipeline.stages:
-                if i.C is not None:
-                    count_retired += 1
-            line += " {}".format(count_retired)
-
-        if not args.no_time:
-            if pipeline.stages[-1] in i and i[pipeline.stages[-1]]:
-                line += " {:8}-{:8}".format(i[pipeline.stages[0]], i[pipeline.stages[-1]])
-            else:
-                line += " {:8}---------".format(i[pipeline.stages[0]])
-
-        if not args.no_pc:
-            line += " {:016x}".format(i.pc)
-
-        if not args.no_insn and i.insn:
-            line += " " + pygments.highlight(str(decode(int(i.insn))),pygments.lexers.GasLexer(),pygments.formatters.TerminalFormatter()).strip()
-
-        if args.bp:
-            if "BP" in i and i.BP:
-                if i.BP.taken:
-                    line += ", BP taken @{} ({})".format(i.BP.index, i.BP.type)
+                elif "RE" in pipeline.stages:
+                    if i.RE is not None:
+                        count_retired += 1
+                elif "C" in pipeline.stages:
+                    if i.C is not None:
+                        count_retired += 1
+                line += " {:8}".format(count_retired)
+            elif c == "t":
+                if pipeline.stages[-1] in i and i[pipeline.stages[-1]]:
+                    line += " {:8}-{:8}".format(i[pipeline.stages[0]], i[pipeline.stages[-1]])
                 else:
-                    line += ", BP not taken @{} ({})".format(i.BP.index, i.BP.type)
-            if "BHT" in i and i.BHT:
-                if i.BHT.taken:
-                    line += ", BHT @{} taken ({:02b}->{:02b})".format(i.BHT.index, i.BHT.oldcounter, i.BHT.newcounter)
-                else:
-                    line += ", BHT @{} not taken ({:02b}->{:02b})".format(i.BHT.index, i.BHT.oldcounter, i.BHT.newcounter)
+                    line += " {:8}---------".format(i[pipeline.stages[0]])
+            elif c == "p":
+                line += " {:016x}".format(i.pc)
+            elif c == "i" and i.insn:
+                line += " " + pygments.highlight(str(decode(int(i.insn))),pygments.lexers.GasLexer(),pygments.formatters.TerminalFormatter()).strip()
+            elif c == "b":
+                if "BP" in i and i.BP:
+                    if i.BP.taken:
+                        line += ", BP taken @{} ({})".format(i.BP.index, i.BP.type)
+                    else:
+                        line += ", BP not taken @{} ({})".format(i.BP.index, i.BP.type)
+                if "BHT" in i and i.BHT:
+                    if i.BHT.taken:
+                        line += ", BHT @{} taken ({:02b}->{:02b})".format(i.BHT.index, i.BHT.oldcounter, i.BHT.newcounter)
+                    else:
+                        line += ", BHT @{} not taken ({:02b}->{:02b})".format(i.BHT.index, i.BHT.oldcounter, i.BHT.newcounter)
 
         args.outfile.write(line+"\n")
     colorama.deinit()
@@ -339,20 +366,15 @@ def FileOrFolderType(f):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("format", choices=pipelines.keys())
+    parser.add_argument("core", choices=pipelines.keys())
     parser.add_argument("infile", nargs='?', help="file with pipeline trace", type=FileOrFolderType,
                         default="-")
     parser.add_argument("outfile", nargs='?', help="file to render to", type=argparse.FileType('w'),
                         default=sys.stdout)
     parser.add_argument("-c", "--colored", action="store_true", help="force colored output")
+    parser.add_argument("-m", "--modes", default="MSU", help="only show from given modes")
     parser.add_argument("-w", "--width", type=int, default=80, help="column width of graph")
-    parser.add_argument("--modes", default="MSU", help="only show from given modes")
-    parser.add_argument("--no-mode", action="store_true", help="suppress mode in output")
-    parser.add_argument("--no-time", action="store_true", help="suppress time frame in output")
-    parser.add_argument("--no-pc", action="store_true", help="suppress program counter in output")
-    parser.add_argument("--no-insn", action="store_true", help="suppress instruction in output")
-    parser.add_argument("--no-count-retired", action="store_true", help="Show counter of retired instructions")
-    parser.add_argument("--bp", action="store_true", help="include branch predictor in output")
+    parser.add_argument("-f", "--format", type=str, default="mrtpi")
     args = parser.parse_args()
     args.modes = list(args.modes)
-    render(pipelines[args.format](args.infile), args)
+    render(pipelines[args.core](args.infile), args)
