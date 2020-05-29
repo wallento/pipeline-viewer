@@ -263,8 +263,8 @@ def render(pipeline, args):
     header_legend = []
     length = 0 # need to keep track separately
     for s in pipeline.stages:
-        leg  = display[s].fore + display[s].back + display[s].char + colorama.Style.RESET_ALL
-        leg += "=" + display[s].legend
+        leg  = colorama.Style.BRIGHT + display[s].fore + display[s].back + display[s].char + colorama.Style.RESET_ALL
+        leg += colorama.Style.BRIGHT + "=" + display[s].legend + colorama.Style.RESET_ALL
         length += 2+len(display[s].legend)
         header_legend.append(leg)
     header_legend = " ".join(header_legend)
@@ -280,13 +280,13 @@ def render(pipeline, args):
                 pos += col_width[c]
             if c == "m":
                 break;
-        print(" "*(pos-1)+"mode")
+        print(" "*(pos-1) + colorama.Style.BRIGHT + "mode" + colorama.Style.RESET_ALL)
 
     col_header = {'m': "|", 'r': "#retired", 't': "   cycle from-to ", 'p': ' pc             ', 'i': " insn"}
 
     for c in args.format:
         if c in col_header:
-            header += col_header[c]
+            header += colorama.Style.BRIGHT + col_header[c] + colorama.Style.RESET_ALL
         header += " "
 
     print(header)
