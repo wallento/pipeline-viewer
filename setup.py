@@ -19,7 +19,7 @@ with open(path.join(here, "README.rst"), encoding="utf-8") as f:
 # Arguments marked as "Required" below must be included for upload to PyPI.
 # Fields marked as "Optional" may be commented out.
 
-requires = ["attrdict", "colorama", "pygments", "riscv-model"]
+requires = ["attrdict", "colorama", "pygments", "riscv-model>=0.3"]
 
 setup(
     # This is the name of your project. The first time you publish this
