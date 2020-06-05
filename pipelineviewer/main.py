@@ -17,6 +17,8 @@ import pygments.formatters
 
 import itertools
 
+from .version import version
+
 from signal import signal, SIGPIPE, SIG_DFL
 signal(SIGPIPE, SIG_DFL)
 
@@ -437,6 +439,7 @@ def main():
                         default="-")
     parser.add_argument("outfile", nargs='?', help="file to render to", type=argparse.FileType('w'),
                         default=sys.stdout)
+    parser.add_argument('--version', action='version', version=version)
     parser.add_argument("-c", "--colored", action="store_true",
                         help="force colored output")
     parser.add_argument("-m", "--modes", default="MSU",
