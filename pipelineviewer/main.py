@@ -6,7 +6,12 @@ import re
 from attrdict import AttrDict
 import colorama
 import argparse
-from babeltrace import TraceCollection
+
+try:
+    from babeltrace import TraceCollection
+except ImportError:
+    print("babeltrace needed and needs to be installed manually (e.g., python3-babeltrace in Debian/Ubuntu)")
+    exit(1)
 
 from riscvmodel.code import decode
 from riscvmodel.model import Model
