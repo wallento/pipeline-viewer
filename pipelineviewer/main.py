@@ -7,12 +7,6 @@ from attrdict import AttrDict
 import colorama
 import argparse
 
-try:
-    from babeltrace import TraceCollection
-except ImportError:
-    print("babeltrace needed and needs to be installed manually (e.g., python3-babeltrace in Debian/Ubuntu)")
-    exit(1)
-
 from riscvmodel.code import decode
 from riscvmodel.model import Model
 from riscvmodel.variant import RV32I
@@ -22,261 +16,27 @@ import pygments.formatters
 
 import itertools
 
+from .ibex import PipelineIbex
+from .boom import PipelineBOOM
+from .swerv import PipelineSwervEL2
+
 from .version import version
 
 from signal import signal, SIGPIPE, SIG_DFL
 signal(SIGPIPE, SIG_DFL)
 
 display = {"IF": AttrDict(char="f", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE, legend="fetch"),
-           "DE": AttrDict(char="d", fore=colorama.Fore.WHITE, back=colorama.Back.YELLOW),
+           "DE": AttrDict(char="d", fore=colorama.Fore.WHITE, back=colorama.Back.YELLOW, legend="decode"),
            "RN": AttrDict(char="n", fore=colorama.Fore.WHITE, back=colorama.Back.MAGENTA),
            "IS": AttrDict(char="i", fore=colorama.Fore.WHITE, back=colorama.Back.RED),
-           "EX": AttrDict(char="e", fore=colorama.Fore.WHITE, back=colorama.Back.LIGHTMAGENTA_EX),
+           "EX": AttrDict(char="e", fore=colorama.Fore.WHITE, back=colorama.Back.LIGHTMAGENTA_EX, legend="execute"),
            "IDEX": AttrDict(char="e", fore=colorama.Fore.WHITE, back=colorama.Back.LIGHTMAGENTA_EX, legend="decode/execute"),
            "C": AttrDict(char="c", fore=colorama.Fore.WHITE, back=colorama.Back.CYAN),
            "RE": AttrDict(char="r", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE),
+           "WB": AttrDict(char="w", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE, legend="write back"),
            }
 
-
-class Pipeline(object):
-    def read(self, file):
-        pass
-
-
-class PipelineArianeText(Pipeline):
-    stages = ["IF", "DE", "IS", "EX", "C"]
-
-    # IF log is "<cycle> IF <id> <mode> <addr>"
-    trace_if = re.compile(r"^\s*(\d+) IF \s*(\d+) (\w) ([0-9A-Fa-f]+)")
-    # DE log is "<cycle> DE <id> <addr> <insn>"
-    trace_de = re.compile(r"^\s*(\d+) DE \s*(\d+) ([0-9A-Fa-f]+) (.*)")
-    # IS log is "<cycle> IS <id>"
-    trace_is = re.compile(r"^\s*(\d+) IS \s*(\d+)")
-    # EX log is "<cycle> EX <id>"
-    trace_ex = re.compile(r"^\s*(\d+) EX \s*(\d+)")
-    # C log is "<cycle> C <id>"
-    trace_c = re.compile(r"^\s*(\d+) C \s*(\d+)")
-
-    # BHT log is "<cycle> BHT <id> <pc> <index> <valid> <taken>: <old>-><new>"
-    trace_bht = re.compile(
-        r"^\s*(\d+) BHT\s+(\d+) ([0-9A-Fa-f]+)\s+(\d+) \[(\d)\] (\d): (\d+)->(\d+)")
-    # BP STATIC log is  "<cycle> BP STATIC <id> <pc> <index> <direction>"
-    trace_bp_static = re.compile(
-        r"^\s*(\d+) BP STATIC \s*(\d+) ([0-9A-Fa-f]+)\s+(\d+) (\d)")
-    # BP STATIC log is  "<cycle> BP DYNAMIC <id> <pc> <index> <direction>"
-    trace_bp_dynamic = re.compile(
-        r"^\s*(\d+) BP DYNAMIC \s*(\d+) ([0-9A-Fa-f]+)\s+(\d+) (\d+)")
-
-    def __init__(self, file):
-        log = {}
-
-        for line in file:
-            m = self.trace_if.match(line)
-            if m:
-                id = int(m.group(2))
-                log[id] = AttrDict({"pc": int(m.group(4), 16), "insn": None, "mode": m.group(3), "IF": int(m.group(1)),
-                                    "DE": None, "IS": None, "EX": None, "C": None, "BHT": None, "BP": None})
-                continue
-            m = self.trace_de.match(line)
-            if m:
-                id = int(m.group(2))
-                pc = int(m.group(3), 16)
-                assert pc & ~3 == log[id].pc, "{} pc = {:x} logpc = {:x}".format(
-                    id, pc, log[id].pc)
-                log[id].pc = pc
-                log[id].DE = int(m.group(1))
-                log[id].insn = m.group(4)
-                continue
-            m = self.trace_is.match(line)
-            if m:
-                id = int(m.group(2))
-                log[id].IS = int(m.group(1))
-                continue
-            m = self.trace_ex.match(line)
-            if m:
-                id = int(m.group(2))
-                log[id].EX = int(m.group(1))
-                continue
-            m = self.trace_c.match(line)
-            if m:
-                id = int(m.group(2))
-                log[id].C = int(m.group(1))
-                continue
-            m = self.trace_bht.match(line)
-            if m:
-                id = int(m.group(2))
-                log[id].BHT = AttrDict(index=int(m.group(4)), taken=int(m.group(6)), oldcounter=int(m.group(7), 2),
-                                       newcounter=int(m.group(8), 2))
-                continue
-            m = self.trace_bp_static.match(line)
-            if m:
-                id = int(m.group(2))
-                log[id].BP = AttrDict(type="static", index=int(
-                    m.group(4)), taken=int(m.group(5)))
-                continue
-            m = self.trace_bp_dynamic.match(line)
-            if m:
-                id = int(m.group(2))
-                log[id].BP = AttrDict(type="dynamic", index=int(
-                    m.group(4)), taken=(int(m.group(5), 2) >= 2))
-                continue
-
-        self.log = log
-
-
-class PipelineArianeCTF(Pipeline):
-    stages = ["IF", "DE", "IS", "EX", "C"]
-
-    def __init__(self, file):
-        log = {}
-
-        # TODO
-
-        self.log = log
-
-
-class PipelineBOOM(Pipeline):
-    stages = ["IF", "DE", "RN", "IS", "C", "RE"]
-
-    trace_if = re.compile(
-        r"\s*(\d+); O3PipeView:fetch:\s*(\d+):0x([0-9A-Fa-f]+):0:\s*\d+:(.*)")
-    trace_de = re.compile(r"\s*(\d+); O3PipeView:decode:\s*(\d+)")
-    trace_rn = re.compile(r"\s*(\d+); O3PipeView:rename:\s*(\d+)")
-    trace_is = re.compile(r"\s*(\d+); O3PipeView:dispatch:\s*(\d+)")
-    trace_c = re.compile(r"\s*(\d+); O3PipeView:complete:\s*(\d+)")
-    trace_re = re.compile(
-        r"\s*(\d+); O3PipeView:retire:\s*(\d+):store: 0:(\d)")
-
-    modemap = ["U", "S", "H", "M"]
-    scale = 1000
-
-    def __init__(self, file):
-        log = {}
-        guess_mode = "M"
-
-        for line in file:
-            m = self.trace_if.match(line)
-            if m:
-                id = int(m.group(1))
-                log[id] = AttrDict({"pc": int(m.group(3), 16), "insn": m.group(4), "mode": guess_mode,
-                                    "IF": int(int(m.group(2))/self.scale), "DE": None, "RN": None, "IS": None, "C": None, "RE": None})
-                continue
-            m = self.trace_de.match(line)
-            if m:
-                id = int(m.group(1))
-                log[id].DE = int(int(m.group(2))/self.scale)
-            m = self.trace_rn.match(line)
-            if m:
-                id = int(m.group(1))
-                log[id].RN = int(int(m.group(2))/self.scale)
-            m = self.trace_is.match(line)
-            if m:
-                id = int(m.group(1))
-                log[id].IS = int(int(m.group(2))/self.scale)
-            m = self.trace_c.match(line)
-            if m:
-                id = int(m.group(1))
-                log[id].C = int(int(m.group(2))/self.scale)
-            m = self.trace_re.match(line)
-            if m:
-                id = int(m.group(1))
-                log[id].RE = int(int(m.group(2))/self.scale)
-                log[id].mode = self.modemap[int(m.group(3))]
-                guess_mode = self.modemap[int(m.group(3))]
-
-        self.log = log
-
-
-"""
-abstraction layer to read CTF format, underlaying library could be replaced easily
-"""
-
-
-class CTFReader():
-    def __init__(self, path):
-        self.babelreader = CTFBabeltrace(path)
-
-    def get_events(self):
-        for event in self.babelreader.get_events():
-            yield event
-
-
-"""
-Utilizing babeltrace for reading CTF format
-"""
-
-
-class CTFBabeltrace():
-    def __init__(self, path):
-        self.traces = dict()
-        self.tc = TraceCollection()
-        if self.tc:
-            # add traces to the collection
-            if self.tc.add_traces_recursive(path, "ctf") is None:
-                raise RuntimeError('Cannot add trace')
-        else:
-            print("no TraceCollection available...")
-
-    def get_events(self):
-        if self.tc:
-            for event in self.tc.events:
-                yield event
-
-
-riscv_priv_modes = {3: "M", 2: "H", 1: "S", 0: "U"}
-
-"""
-IBEX Core
-"""
-
-
-class PipelineIbex(Pipeline):
-    stages = ["IF", "IDEX"]
-    event_name = {"IF": 0, "IDEX": 1,
-                  "IDEX_MULTCYCLE_START": 2, "IDEX_MULTCYCLE_END": 3}
-
-    def __init__(self, tracepath):
-        log = {}
-
-        self.ctf_reader = CTFReader(tracepath)
-        for event in self.ctf_reader.get_events():
-            id = 0
-            pc = 0
-            insn = ""
-            insn_type = ""
-
-            id = event["id"]
-            id_str = list(self.event_name)[id]
-            timestamp = event['timestamp']
-            pc = (event["pc"])
-
-            if id_str == "IF":
-                keys = event.keys()
-
-                if "insn" in keys:
-                    insn = str(event["insn"])
-                if "insn_type" in keys:
-                    insn_type = str(event["insn_type"])
-                log[event["insn_id"]] = AttrDict(
-                    {"pc": pc, "insn_type": insn_type, "insn": insn, "mode": riscv_priv_modes[event["mode"]], "IF": timestamp, "IDEX": None, "end": None})
-
-            elif id_str == "IDEX":
-                log[event["insn_id"]]["IDEX"] = event["timestamp"]
-                log[event["insn_id"]]["end"] = event["timestamp"]
-                pass
-            elif id_str == "IDEX_MULTCYCLE_START":
-                log[event["insn_id"]]["IDEX"] = event["timestamp"]
-                pass
-            elif id_str == "IDEX_MULTCYCLE_END":
-                log[event["insn_id"]]["end"] = event["timestamp"]
-                pass
-
-        self.log = log
-
-
-pipelines = {"ariane": PipelineArianeCTF, "ariane-text": PipelineArianeText,
-             "ibex": PipelineIbex, "boom": PipelineBOOM}
-
+pipelines = {"ibex": PipelineIbex, "boom": PipelineBOOM, "swerv-el2": PipelineSwervEL2}
 
 def render(pipeline, args):
     if args.colored:
@@ -297,7 +57,7 @@ def render(pipeline, args):
         length += 2+len(display[s].legend)
         header_legend.append(leg)
     header_legend = " ".join(header_legend)
-    header = " {}{} ".format(header_legend, " "*(args.width-length))
+    print(header_legend)
 
     col_width = {'m': 1, 'r': 8, 't': 17, 'p': 16, 'i': 20, 'e': 40 }
 
@@ -315,6 +75,7 @@ def render(pipeline, args):
     col_header = {'m': "|", 'r': "#retired",
                   't': "   cycle from-to ", 'p': ' pc             ', 'i': " insn"}
 
+    header = " "*(args.width+3)
     for c in args.format:
         if c in col_header:
             header += colorama.Style.BRIGHT + \

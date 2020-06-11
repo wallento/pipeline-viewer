@@ -5,3 +5,4 @@
 __pycache__
 pipelineviewer/version.py
 *~
+.vscode
