@@ -1,4 +1,5 @@
 from .base import Pipeline, riscv_priv_modes
+from .ctf import CTFReader
 
 from attrdict import AttrDict
 
