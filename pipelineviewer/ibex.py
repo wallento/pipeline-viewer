@@ -4,12 +4,12 @@ from .ctf import CTFReader
 from attrdict import AttrDict
 
 class PipelineIbex(Pipeline):
-  stages = ["IF", "IDEX"]
-  event_name = {"IF": 0, "IDEX": 1,
-                "IDEX_MULTCYCLE_START": 2, "IDEX_MULTCYCLE_END": 3}
+  event_name = {"IF": 0, "IDEX": 1, "WB": 2, "DONE": 3}
 
   def __init__(self, tracepath):
     log = {}
+
+    self.hasWritebackStage = False
 
     self.ctf_reader = CTFReader(tracepath)
     for event in self.ctf_reader.get_events():
@@ -31,14 +31,20 @@ class PipelineIbex(Pipeline):
         if "insn_type" in keys:
           insn_type = str(event["insn_type"])
         log[event["insn_id"]] = AttrDict(
-          {"pc": pc, "insn_type": insn_type, "insn": insn, "mode": riscv_priv_modes[event["mode"]], "IF": timestamp, "IDEX": None, "end": None})
+          {"pc": pc, "insn_type": insn_type, "insn": insn, "mode": riscv_priv_modes[event["mode"]], "IF": timestamp, "IDEX": None, "WB": None, "end": None})
 
       elif id_str == "IDEX":
+        # single cycle idex in the standard pipeline
         log[event["insn_id"]]["IDEX"] = event["timestamp"]
-        log[event["insn_id"]]["end"] = event["timestamp"]
-      elif id_str == "IDEX_MULTCYCLE_START":
-        log[event["insn_id"]]["IDEX"] = event["timestamp"]
-      elif id_str == "IDEX_MULTCYCLE_END":
+      elif id_str == "WB":
+        # idex starts in the pipeline with
+        log[event["insn_id"]]["WB"] = event["timestamp"]
+        self.hasWritebackStage = True
+      elif id_str == "DONE":
+        # idex starts in the pipeline with
         log[event["insn_id"]]["end"] = event["timestamp"]
 
     self.log = log
+
+  def get_stages(self):
+      return ["IF", "IDEX", "WB"] if self.hasWritebackStage else ["IF", "IDEX"]

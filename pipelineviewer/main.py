@@ -9,7 +9,7 @@ import argparse
 
 from riscvmodel.code import decode
 from riscvmodel.model import Model
-from riscvmodel.variant import RV32I
+from riscvmodel.variant import RV32I, RV32IM, Variant
 import pygments
 import pygments.lexers
 import pygments.formatters
@@ -46,9 +46,11 @@ def render(pipeline, args):
 
     model = Model(RV32I) if "e" in args.format else None
 
+    stages = pipeline.get_stages()
+
     header_legend = []
     length = 0  # need to keep track separately
-    for s in pipeline.stages:
+    for s in stages:
         leg = colorama.Style.BRIGHT + \
             display[s].fore + display[s].back + \
             display[s].char + colorama.Style.RESET_ALL
@@ -57,7 +59,7 @@ def render(pipeline, args):
         length += 2+len(display[s].legend)
         header_legend.append(leg)
     header_legend = " ".join(header_legend)
-    print(header_legend)
+    args.outfile.write(header_legend)
 
     col_width = {'m': 1, 'r': 8, 't': 17, 'p': 16, 'i': 20, 'e': 40 }
 
@@ -96,20 +98,20 @@ def render(pipeline, args):
         in_snip = False
         line = list("." * args.width)
 
-        for s in range(len(pipeline.stages)):
-            stage = pipeline.stages[s]
+        for s in range(len(stages)):
+            stage = stages[s]
             if stage in i and i[stage] is not None:
                 line[i[stage] % args.width] = display[stage].fore + \
                     display[stage].back + display[stage].char + \
                     colorama.Style.RESET_ALL
                 next = s + 1
-                if next >= len(pipeline.stages) and "end" in i and i["end"] is not None:
+                if next >= len(stages) and "end" in i and i["end"] is not None:
                     for x in range(i[stage] + 1, i["end"]+1):
                         line[x % args.width] = display[stage].fore + \
                             display[stage].back + "=" + \
                             colorama.Style.RESET_ALL
                     continue
-                next = pipeline.stages[next]
+                next = stages[next]
                 if next in i and i[next] is not None:
                     for x in range(i[stage] + 1, i[next]):
                         line[x % args.width] = display[stage].fore + \
@@ -129,32 +131,34 @@ def render(pipeline, args):
             elif c == "r":
                 if "end" in i and i["end"]:
                     count_retired += 1
-                elif "RE" in pipeline.stages:
+                elif "RE" in stages:
                     if i.RE is not None:
                         count_retired += 1
-                elif "C" in pipeline.stages:
+                elif "C" in stages:
                     if i.C is not None:
                         count_retired += 1
                 line += "{:8}".format(count_retired)
                 width = 8
             elif c == "t":
-                if pipeline.stages[-1] in i and i[pipeline.stages[-1]]:
-                    line += "{:8}-{:8}".format(i[pipeline.stages[0]],
-                                                i[pipeline.stages[-1]])
+                if stages[-1] in i and i[stages[-1]]:
+                    line += "{:8}-{:8}".format(i[stages[0]],
+                                                i[stages[-1]])
                 else:
-                    line += "{:8}---------".format(i[pipeline.stages[0]])
+                    line += "{:8}---------".format(i[stages[0]])
                 width = 17
             elif c == "p":
                 line += "{:016x}".format(i.pc)
                 width = 16
             elif c == "i" and i.insn:
-                insn = str(decode(int(i.insn)))
-                line += pygments.highlight(insn, pygments.lexers.GasLexer(
-                ), pygments.formatters.TerminalFormatter()).strip()
+                try:
+                    insn = str(decode(int(i.insn), Variant("RV32IMZifencei_Zicsr")))
+                except:
+                    insn = str(i.insn)
+                line += pygments.highlight(insn, pygments.lexers.GasLexer(), pygments.formatters.TerminalFormatter()).strip()
                 width = len(insn)
             elif c == "e":
                 line += colorama.Style.DIM
-                insn = decode(int(i.insn))
+                insn = decode(int(i.insn), Variant("RV32IMZifencei_Zicsr"))
                 inops = insn.inopstr(model)
                 if len(inops) > 0:
                     line += "[i] " + inops
