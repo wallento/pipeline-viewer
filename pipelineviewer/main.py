@@ -175,11 +175,11 @@ def render(pipeline, args):
             elif c == "b":
                 if "BP" in i and i.BP:
                     if i.BP.taken:
-                        line += ", BP taken @{} ({})".format(i.BP.index,
-                                                             i.BP.type)
+                        line += ", BP taken"
                     else:
-                        line += ", BP not taken @{} ({})".format(
-                            i.BP.index, i.BP.type)
+                        line += ", BP not taken"
+                    if i.BP.mispredict:
+                        line += " (mispredict)"
                 if "BHT" in i and i.BHT:
                     if i.BHT.taken:
                         line += ", BHT @{} taken ({:02b}->{:02b})".format(

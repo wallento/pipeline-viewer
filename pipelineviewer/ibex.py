@@ -4,7 +4,7 @@ from .ctf import CTFReader
 from attrdict import AttrDict
 
 class PipelineIbex(Pipeline):
-  event_name = {"IF": 0, "IDEX": 1, "WB": 2, "DONE": 3}
+  event_name = {"IF": 0, "IDEX": 1, "WB": 2, "DONE": 3, "BRANCH_PREDICT": 4, "BRANCH_UPDATE": 5}
 
   def __init__(self, tracepath):
     log = {}
@@ -31,7 +31,7 @@ class PipelineIbex(Pipeline):
         if "insn_type" in keys:
           insn_type = str(event["insn_type"])
         log[event["insn_id"]] = AttrDict(
-          {"pc": pc, "insn_type": insn_type, "insn": insn, "mode": riscv_priv_modes[event["mode"]], "IF": timestamp, "IDEX": None, "WB": None, "end": None})
+          {"pc": pc, "insn_type": insn_type, "insn": insn, "mode": riscv_priv_modes[event["mode"]], "IF": timestamp, "IDEX": None, "WB": None, "end": None, "BP": None})
 
       elif id_str == "IDEX":
         # single cycle idex in the standard pipeline
@@ -43,6 +43,10 @@ class PipelineIbex(Pipeline):
       elif id_str == "DONE":
         # idex starts in the pipeline with
         log[event["insn_id"]]["end"] = event["timestamp"]
+      elif id_str == "BRANCH_PREDICT":
+        log[event["insn_id"]]["BP"] = AttrDict(taken=event["taken"], mispredict=False)
+      elif id_str == "BRANCH_UPDATE":
+        log[event["insn_id"]]["BP"].mispredict = (event["mispredict"] != 0)
 
     self.log = log
 
