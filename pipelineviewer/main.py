@@ -61,14 +61,15 @@ def render(pipeline, args):
     header_legend = " ".join(header_legend)
     args.outfile.write(header_legend)
 
-    col_width = {'m': 1, 'r': 8, 't': 17, 'p': 16, 'i': 20, 'e': 40 }
+    col_width = {'m': 1, 'r': 8, 't': 17, 'p': 16 }
 
     col_pos = {}
     pos = args.width + 1
     for c in args.format:
         pos += 1
         col_pos[c] = pos
-        pos += col_width[c]
+        if c in col_width:
+            pos += col_width[c]
 
     if "m" in args.format:
         print(" "*(col_pos['m']-1) + colorama.Style.BRIGHT +
@@ -186,9 +187,10 @@ def render(pipeline, args):
                     else:
                         line += ", BHT @{} not taken ({:02b}->{:02b})".format(
                             i.BHT.index, i.BHT.oldcounter, i.BHT.newcounter)
-            if width < col_width[c]:
-                line += " "*(col_width[c] - width)
-            col += col_width[c]
+            if c in col_width:
+                if width < col_width[c]:
+                    line += " "*(col_width[c] - width)
+                col += col_width[c]
         args.outfile.write(line+"\n")
     colorama.deinit()
 
