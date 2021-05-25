@@ -26,12 +26,12 @@ from signal import signal, SIGPIPE, SIG_DFL
 signal(SIGPIPE, SIG_DFL)
 
 display = {"IF": AttrDict(char="f", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE, legend="fetch"),
-           "DE": AttrDict(char="d", fore=colorama.Fore.WHITE, back=colorama.Back.YELLOW, legend="decode"),
+           "DE": AttrDict(char="d", fore=colorama.Fore.WHITE, back=colorama.Back.MAGENTA, legend="decode"),
            "RN": AttrDict(char="n", fore=colorama.Fore.WHITE, back=colorama.Back.MAGENTA),
            "IS": AttrDict(char="i", fore=colorama.Fore.WHITE, back=colorama.Back.RED),
            "EX": AttrDict(char="e", fore=colorama.Fore.WHITE, back=colorama.Back.LIGHTMAGENTA_EX, legend="execute"),
            "IDEX": AttrDict(char="e", fore=colorama.Fore.WHITE, back=colorama.Back.LIGHTMAGENTA_EX, legend="decode/execute"),
-           "C": AttrDict(char="c", fore=colorama.Fore.WHITE, back=colorama.Back.CYAN),
+           "C": AttrDict(char="c", fore=colorama.Fore.WHITE, back=colorama.Back.CYAN, legend="commit"),
            "RE": AttrDict(char="r", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE),
            "WB": AttrDict(char="w", fore=colorama.Fore.WHITE, back=colorama.Back.BLUE, legend="write back"),
            }
